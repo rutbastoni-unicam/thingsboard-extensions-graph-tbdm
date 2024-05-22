@@ -19,7 +19,8 @@
   },
   "dependencies": {
     "primeicons": "~6.0.1",
-    "primeng": "~15.3.0"
+    "primeng": "~15.3.0",
+    "three": "^0.164.1"
   },
   "devDependencies": {
     "@angular-devkit/build-angular": "15.2.10",

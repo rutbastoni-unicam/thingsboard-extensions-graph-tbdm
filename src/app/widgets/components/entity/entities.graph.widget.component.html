@@ -1,1 +1,6 @@
-<p>wip my graph widget works!</p>
+<div class="tb-entities-graph tb-absolute-fill" tb-toast toastTarget="{{ toastTargetId }}">
+  <div fxFlex fxLayout="column" class="tb-absolute-fill">
+        <span [fxShow]="dataLoading" fxLayoutAlign="center center" class="no-data-found">{{ 'common.loading' | translate }}</span>
+        <div id="graph-container" [fxShow]="!dataLoading && !isEmpty()">should see graph here</div>
+  </div>
+</div>

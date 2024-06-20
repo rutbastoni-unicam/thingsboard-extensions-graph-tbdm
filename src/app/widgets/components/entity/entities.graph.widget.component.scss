@@ -1,4 +1,11 @@
 :host {
   width: 100%;
   height: 100%;
+
+  #graph-container {
+    height: 100%;
+    // Default background color for graph, if not set from widget settings
+    background-color: rgb(167, 193, 222);
+  }
 }
+

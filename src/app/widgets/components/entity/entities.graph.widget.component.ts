@@ -1,4 +1,4 @@
-import { AfterViewInit, Component, Input, OnInit } from '@angular/core';
+import { AfterViewInit, Component, Input, OnInit, ElementRef, Renderer2 } from '@angular/core';
 
 import { EntitiesGraphWidgetSettings, GraphNode, GraphNodeDatasource, GraphLink } from './entities-graph-widget.models';
 import {
@@ -11,6 +11,11 @@ import { WidgetComponent } from '@home/components/widget/widget.component';
 import { WidgetContext } from '../../models/widget-component.models';
 import { Store} from '@ngrx/store';
 import { AppState} from '@core/core.state';
+
+import ForceGraph3D, {
+  ConfigOptions,
+  ForceGraph3DInstance,
+} from '3d-force-graph';
 
 @Component({
   selector: 'tb-entities-graph-widget',
@@ -28,6 +33,7 @@ export class EntitiesGraphWidgetComponent extends PageComponent implements OnIni
   public toastTargetId = 'entities-graph-' + this.utils.guid();
 
   public dataLoading = true;
+  public dataLoaded = false;
 
   protected graphData: {nodes: Array<GraphNode>; links: Array<any>} = {
     nodes: [],
@@ -42,8 +48,16 @@ export class EntitiesGraphWidgetComponent extends PageComponent implements OnIni
   private subscription: IWidgetSubscription;
   private datasources: Array<GraphNodeDatasource>;
 
+  //Default light blue like in Thingsboard theme
+  private graphBackgroundColor = '#a7c1dE';
+  private graphDomElement: HTMLElement =  null;
+
+  private graph!: ForceGraph3DInstance;
+
   constructor(protected store: Store<AppState>,
+              private elementRef: ElementRef,
               private widgetComponent: WidgetComponent,
+              private renderer: Renderer2,
               private utils: UtilsService) {
     super(store);
   }
@@ -58,18 +72,24 @@ export class EntitiesGraphWidgetComponent extends PageComponent implements OnIni
     //TODO verify if GraphNodeDatasource type is necessary
     this.datasources = this.subscription.datasources as Array<GraphNodeDatasource>;
 
-    //Only for debug purposes - custom datasource instantiation in development mode
-    const useCustomDatasources = this.ctx.dashboardService.currentUrl === '/widget-editor';
-    this.widgetComponent.typeParameters.useCustomDatasources = useCustomDatasources;
-
     //TODO code this
     // this.initializeConfig();
 
     this.ctx.updateWidgetParams();
+
+    const settingsGraphBackgroundColor = this.widgetConfig.settings?.graph?.backgroundColor;
+    if(settingsGraphBackgroundColor) {
+      this.graphBackgroundColor = settingsGraphBackgroundColor;
+    }
+
   }
 
   ngAfterViewInit(): void {
-    if(this.widgetComponent.typeParameters.useCustomDatasources && Array.isArray(this.debugAssets)
+    const nativeElement = this.elementRef.nativeElement;
+    this.graphDomElement = nativeElement.querySelector('#graph-container');
+    this.renderer.setStyle(this.graphDomElement, 'background-color', this.graphBackgroundColor);
+
+    if(this.ctx.dashboardService.currentUrl === '/widget-editor' && Array.isArray(this.debugAssets)
       && this.debugAssets.length > 0){
       //Re-create custom datasources and subscribe to them
       this.datasources = null;
@@ -262,6 +282,7 @@ export class EntitiesGraphWidgetComponent extends PageComponent implements OnIni
     }
 
     this.dataLoading = false;
+    this.dataLoaded = true;
     this.widgetComponent.displayNoData = this.isEmpty();
     this.ctx.detectChanges();
     this.renderGraph();
@@ -270,6 +291,9 @@ export class EntitiesGraphWidgetComponent extends PageComponent implements OnIni
   private renderGraph() {
     console.error('>>>> RENDER GRAPH work in progress');
     console.log(this.graphData);
+    this.graph = ForceGraph3D()(this.graphDomElement).backgroundColor(this.graphBackgroundColor);
+    this.graph.graphData(this.graphData);
+    console.log(this.graph);
   }
 }
 

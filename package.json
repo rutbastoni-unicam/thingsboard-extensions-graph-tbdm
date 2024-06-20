@@ -18,6 +18,7 @@
     "npm": "Please use yarn instead of NPM to install dependencies"
   },
   "dependencies": {
+    "3d-force-graph": "^1.73.3",
     "primeicons": "~6.0.1",
     "primeng": "~15.3.0",
     "three": "^0.164.1"

@@ -118,7 +118,6 @@ export class EntitiesGraphWidgetComponent extends PageComponent implements OnIni
 
       this.ctx.subscriptionApi.createSubscription(subscriptionOptions, true).subscribe({
         next: (subscription) => {
-          console.log('>>>>createSubscription next');
           this.ctx.subscriptionApi.removeSubscription(this.subscription.id);
 
           this.ctx.defaultSubscription = subscription;
@@ -157,6 +156,16 @@ export class EntitiesGraphWidgetComponent extends PageComponent implements OnIni
     });
 
     this.processNodes();
+  }
+
+  public onResize() {
+    if(!this.dataLoaded) {
+      return;
+    }
+
+    this.graph
+      .height(this.graphDomElement.clientHeight)
+      .width(this.graphDomElement.clientWidth);
   }
 
   private datasourceToNode(childDatasource: GraphNodeDatasource) {
@@ -289,11 +298,29 @@ export class EntitiesGraphWidgetComponent extends PageComponent implements OnIni
   }
 
   private renderGraph() {
-    console.error('>>>> RENDER GRAPH work in progress');
-    console.log(this.graphData);
-    this.graph = ForceGraph3D()(this.graphDomElement).backgroundColor(this.graphBackgroundColor);
-    this.graph.graphData(this.graphData);
-    console.log(this.graph);
+    if(!this.dataLoaded) {
+      return;
+    }
+
+    this.graph =
+      ForceGraph3D()(this.graphDomElement)
+        .backgroundColor(this.graphBackgroundColor)
+        .height(this.graphDomElement.clientHeight)
+        .width(this.graphDomElement.clientWidth);
+    this
+      .graph
+      .graphData(this.graphData)
+      .onNodeDragEnd((node: GraphNode) => {
+        node.fx = node.x;
+        node.fy = node.y;
+        node.fz = node.z;
+      })
+      // .zoomToFit(1000, 5, (node: object) => {
+      //   // console.log('node include?');console.log(node);
+      //   return true;
+      // })
+    ;
+
   }
 }
 

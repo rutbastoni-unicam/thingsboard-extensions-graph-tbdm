@@ -16,6 +16,9 @@ import ForceGraph3D, {
   ConfigOptions,
   ForceGraph3DInstance,
 } from '3d-force-graph';
+import * as THREE from 'three';
+import SpriteText from 'three-spritetext';
+
 
 @Component({
   selector: 'tb-entities-graph-widget',
@@ -50,6 +53,9 @@ export class EntitiesGraphWidgetComponent extends PageComponent implements OnIni
 
   //Default light blue like in Thingsboard theme
   private graphBackgroundColor = '#a7c1dE';
+  // Default size of nodes and links, configurable from widget
+  private graphNodeSize = 100;
+  private graphDistanceSize = 100;
   private graphDomElement: HTMLElement =  null;
 
   private graph!: ForceGraph3DInstance;
@@ -77,9 +83,21 @@ export class EntitiesGraphWidgetComponent extends PageComponent implements OnIni
 
     this.ctx.updateWidgetParams();
 
-    const settingsGraphBackgroundColor = this.widgetConfig.settings?.graph?.backgroundColor;
-    if(settingsGraphBackgroundColor) {
-      this.graphBackgroundColor = settingsGraphBackgroundColor;
+    const graphSettings = this.widgetConfig.settings?.graph;
+    if(graphSettings) {
+      const settingsGraphBackgroundColor = graphSettings.backgroundColor;
+      if(settingsGraphBackgroundColor) {
+        this.graphBackgroundColor = settingsGraphBackgroundColor;
+      }
+
+      const settingsGraphNodeSize = graphSettings.nodeSize;
+      if(settingsGraphNodeSize) {
+        this.graphNodeSize = settingsGraphNodeSize;
+      }
+      const settingsGraphLinkDistance = graphSettings.linkDistance;
+      if(settingsGraphLinkDistance) {
+        this.graphDistanceSize = settingsGraphLinkDistance;
+      }
     }
 
   }
@@ -306,7 +324,23 @@ export class EntitiesGraphWidgetComponent extends PageComponent implements OnIni
       ForceGraph3D()(this.graphDomElement)
         .backgroundColor(this.graphBackgroundColor)
         .height(this.graphDomElement.clientHeight)
-        .width(this.graphDomElement.clientWidth);
+        .width(this.graphDomElement.clientWidth)
+        .nodeVal(this.graphNodeSize)
+        .nodeThreeObject(node => {
+          const sprite = new SpriteText(node.label ? node.label : node.name);
+          sprite.color = node.color;
+          sprite.textHeight = 8;
+
+          // Cannot infer properties from parent, so have to type assert
+          (sprite as THREE.Sprite).material.depthTest = false;
+          (sprite as THREE.Sprite).material.depthWrite = false;
+          (sprite as THREE.Sprite).renderOrder = 999;
+          return sprite;
+
+        })
+        .nodeThreeObjectExtend(true)
+    ;
+
     this
       .graph
       .graphData(this.graphData)
@@ -321,6 +355,12 @@ export class EntitiesGraphWidgetComponent extends PageComponent implements OnIni
       // })
     ;
 
+    const linkForce = this.graph
+      .d3Force('link')
+      .distance(link => this.graphDistanceSize);
+
+    // console.error('ready graph, nodes size tempgraph');console.log(this.graph.nodeVal());
+    // (window as any).tempgraph = this.graph;
   }
 }
 

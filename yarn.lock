@@ -9115,6 +9115,11 @@ three-render-objects@^1.29:
     kapsule "1"
     polished "4"
 
+three-spritetext@^1.8.2:
+  version "1.8.2"
+  resolved "https://registry.yarnpkg.com/three-spritetext/-/three-spritetext-1.8.2.tgz#62d8106e579274c65d86df2b56dda46b13fa97cc"
+  integrity sha512-OYjyAhWnQ6+7CPKjnpq3JQM+Lpr6cSOppCtbOOzF1IbCauGkoDFvbAnxYd0LVxEsIO2RALXXScg2eX+R6CAfyA==
+
 "three@>=0.118 <1":
   version "0.165.0"
   resolved "https://registry.yarnpkg.com/three/-/three-0.165.0.tgz#43b93b9b56c71b7eeee6b531d737ab573633ccd1"

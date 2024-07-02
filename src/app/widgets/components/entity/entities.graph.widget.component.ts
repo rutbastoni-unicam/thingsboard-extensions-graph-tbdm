@@ -1,12 +1,12 @@
 import { AfterViewInit, Component, Input, OnInit, ElementRef, Renderer2 } from '@angular/core';
 
-import { EntitiesGraphWidgetSettings, GraphNode, GraphNodeDatasource, GraphLink } from './entities-graph-widget.models';
+import { EntitiesGraphWidgetSettings, GraphNode, GraphNodeDatasource, GraphLink, defaultGraphWidgetSettings } from './entities-graph-widget.models';
 import {
   AliasFilterType, Datasource, EntityType, PageComponent, WidgetConfig, widgetType, DatasourceType, EntityRelationsQuery,
   EntitySearchDirection, RelationTypeGroup
 } from '@shared/public-api';
 import { RelationsQueryFilter } from '@shared/models/alias.models';
-import {IWidgetSubscription, WidgetSubscriptionOptions, UtilsService, WidgetSubscription} from '@core/public-api';
+import {IWidgetSubscription, WidgetSubscriptionOptions, UtilsService, WidgetSubscription, isDefined } from '@core/public-api';
 import { WidgetComponent } from '@home/components/widget/widget.component';
 import { WidgetContext } from '../../models/widget-component.models';
 import { Store} from '@ngrx/store';
@@ -51,11 +51,13 @@ export class EntitiesGraphWidgetComponent extends PageComponent implements OnIni
   private subscription: IWidgetSubscription;
   private datasources: Array<GraphNodeDatasource>;
 
-  //Default light blue like in Thingsboard theme
-  private graphBackgroundColor = '#a7c1dE';
-  // Default size of nodes and links, configurable from widget
-  private graphNodeSize = 100;
-  private graphDistanceSize = 100;
+  //Visual graph configs
+  private graphBackgroundColor;
+  private graphNodeSize;
+  private graphDistanceSize;
+  private fixPositionAfterDrag: boolean;
+  private deviceIcon;
+
   private graphDomElement: HTMLElement =  null;
 
   private graph!: ForceGraph3DInstance;
@@ -83,22 +85,16 @@ export class EntitiesGraphWidgetComponent extends PageComponent implements OnIni
 
     this.ctx.updateWidgetParams();
 
-    const graphSettings = this.widgetConfig.settings?.graph;
-    if(graphSettings) {
-      const settingsGraphBackgroundColor = graphSettings.backgroundColor;
-      if(settingsGraphBackgroundColor) {
-        this.graphBackgroundColor = settingsGraphBackgroundColor;
-      }
+    // Load settings from widget config or from defaults
+    const graphSettings = this.settings?.graph;
+    const defaultGraphSettings = defaultGraphWidgetSettings.graph;
+    this.graphBackgroundColor = graphSettings?.backgroundColor || defaultGraphSettings.backgroundColor;
+    this.graphNodeSize = graphSettings?.nodeSize || defaultGraphSettings.nodeSize;
+    this.graphDistanceSize = graphSettings?.linkDistance || defaultGraphSettings.linkDistance;
+    this.fixPositionAfterDrag =
+      isDefined(graphSettings?.fixPositionAfterDrag) ?  graphSettings?.fixPositionAfterDrag : defaultGraphSettings.fixPositionAfterDrag;
+    this.deviceIcon = graphSettings?.deviceIcon || defaultGraphSettings.deviceIcon;
 
-      const settingsGraphNodeSize = graphSettings.nodeSize;
-      if(settingsGraphNodeSize) {
-        this.graphNodeSize = settingsGraphNodeSize;
-      }
-      const settingsGraphLinkDistance = graphSettings.linkDistance;
-      if(settingsGraphLinkDistance) {
-        this.graphDistanceSize = settingsGraphLinkDistance;
-      }
-    }
 
   }
 
@@ -326,6 +322,9 @@ export class EntitiesGraphWidgetComponent extends PageComponent implements OnIni
         .height(this.graphDomElement.clientHeight)
         .width(this.graphDomElement.clientWidth)
         .nodeVal(this.graphNodeSize)
+        .nodeColor((node) => {
+          return (node as GraphNode).entityType == EntityType.DEVICE ? '#ffffff' : '#ffffaa';
+        })
         .nodeThreeObject(node => {
           const sprite = new SpriteText(node.label ? node.label : node.name);
           sprite.color = node.color;
@@ -335,25 +334,40 @@ export class EntitiesGraphWidgetComponent extends PageComponent implements OnIni
           (sprite as THREE.Sprite).material.depthTest = false;
           (sprite as THREE.Sprite).material.depthWrite = false;
           (sprite as THREE.Sprite).renderOrder = 999;
+
+          if(node.entityType == EntityType.DEVICE) {
+            const imgTexture = new THREE.TextureLoader().load(this.deviceIcon);
+            imgTexture.colorSpace = THREE.SRGBColorSpace;
+            const material = new THREE.SpriteMaterial({ map: imgTexture, depthTest: false, depthWrite: false });
+            const spriteImg = new THREE.Sprite(material);
+            const size = 20;
+            spriteImg.scale.set(size, size);
+            spriteImg.position.set(0, 0.1, 0);
+            spriteImg.renderOrder = 900;
+
+            return spriteImg;
+
+          }
+
           return sprite;
 
         })
         .nodeThreeObjectExtend(true)
     ;
 
-    this
-      .graph
-      .graphData(this.graphData)
-      .onNodeDragEnd((node: GraphNode) => {
-        node.fx = node.x;
-        node.fy = node.y;
-        node.fz = node.z;
-      })
+    this.graph.graphData(this.graphData);
       // .zoomToFit(1000, 5, (node: object) => {
       //   // console.log('node include?');console.log(node);
       //   return true;
-      // })
-    ;
+      // });
+
+    if(this.fixPositionAfterDrag) {
+      this.graph.onNodeDragEnd((node: GraphNode) => {
+        node.fx = node.x;
+        node.fy = node.y;
+        node.fz = node.z;
+      });
+    }
 
     const linkForce = this.graph
       .d3Force('link')

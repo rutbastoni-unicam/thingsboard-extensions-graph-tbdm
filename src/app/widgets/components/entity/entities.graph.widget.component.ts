@@ -52,9 +52,14 @@ export class EntitiesGraphWidgetComponent extends PageComponent implements OnIni
   private datasources: Array<GraphNodeDatasource>;
 
   //Visual graph configs
-  private graphBackgroundColor;
-  private graphNodeSize;
-  private graphDistanceSize;
+  private graphBackgroundColor: string;
+  private graphAssetNodeColor: string;
+  private graphDeviceNodeColor: string;
+  private graphNodeSize: number;
+  private graphDistanceSize: number;
+  private rootNodeSpecialSettings: boolean;
+  private rootNodeSize: number;
+  private graphRootNodeColor: string;
   private fixPositionAfterDrag: boolean;
   private deviceIcon;
 
@@ -89,8 +94,14 @@ export class EntitiesGraphWidgetComponent extends PageComponent implements OnIni
     const graphSettings = this.settings?.graph;
     const defaultGraphSettings = defaultGraphWidgetSettings.graph;
     this.graphBackgroundColor = graphSettings?.backgroundColor || defaultGraphSettings.backgroundColor;
+    this.graphAssetNodeColor = graphSettings?.assetNodeColor || defaultGraphSettings.assetNodeColor;
+    this.graphDeviceNodeColor = graphSettings?.deviceNodeColor || defaultGraphSettings.deviceNodeColor;
     this.graphNodeSize = graphSettings?.nodeSize || defaultGraphSettings.nodeSize;
     this.graphDistanceSize = graphSettings?.linkDistance || defaultGraphSettings.linkDistance;
+    this.rootNodeSpecialSettings =
+      isDefined(graphSettings?.rootNodeSpecialSettings) ?  graphSettings?.rootNodeSpecialSettings : defaultGraphSettings.rootNodeSpecialSettings;
+    this.rootNodeSize = graphSettings?.rootNodeSize || defaultGraphSettings.rootNodeSize;
+    this.graphRootNodeColor = graphSettings?.rootNodeColor || defaultGraphSettings.rootNodeColor;
     this.fixPositionAfterDrag =
       isDefined(graphSettings?.fixPositionAfterDrag) ?  graphSettings?.fixPositionAfterDrag : defaultGraphSettings.fixPositionAfterDrag;
     this.deviceIcon = graphSettings?.deviceIcon || defaultGraphSettings.deviceIcon;
@@ -166,7 +177,7 @@ export class EntitiesGraphWidgetComponent extends PageComponent implements OnIni
     this.graphData = {nodes: [], links: []};
 
     this.datasources.forEach((childDatasource, index) => {
-      this.datasourceToNode(childDatasource);
+      this.datasourceToNode(childDatasource, 0);
     });
 
     this.processNodes();
@@ -182,7 +193,7 @@ export class EntitiesGraphWidgetComponent extends PageComponent implements OnIni
       .width(this.graphDomElement.clientWidth);
   }
 
-  private datasourceToNode(childDatasource: GraphNodeDatasource) {
+  private datasourceToNode(childDatasource: GraphNodeDatasource, level: number) {
     const entityId = childDatasource.entityId;
 
     //In case of more datasources pointing to same entity, simply overwrite label and name with last values found
@@ -197,6 +208,7 @@ export class EntitiesGraphWidgetComponent extends PageComponent implements OnIni
         name: childDatasource.entityName,
         entityType: childDatasource.entityType,
         childrenNodesLoaded: false,
+        level: level,
         datasource: childDatasource
       };
       this.nodesToProcess.push(nodeToProcess);
@@ -272,7 +284,7 @@ export class EntitiesGraphWidgetComponent extends PageComponent implements OnIni
             } else {
               const datasourcesPageData = subscription.datasourcePages[0];
               datasourcesPageData.data.forEach((childDatasource: GraphNodeDatasource, index) => {
-                this.datasourceToNode(childDatasource);
+                this.datasourceToNode(childDatasource, (nodeToProcess.level + 1));
 
                 //Save relation in graph data
                 const childRelationType =
@@ -321,12 +333,21 @@ export class EntitiesGraphWidgetComponent extends PageComponent implements OnIni
         .backgroundColor(this.graphBackgroundColor)
         .height(this.graphDomElement.clientHeight)
         .width(this.graphDomElement.clientWidth)
-        .nodeVal(this.graphNodeSize)
-        .nodeColor((node) => {
-          return (node as GraphNode).entityType == EntityType.DEVICE ? '#ffffff' : '#ffffaa';
+        .nodeVal((node: GraphNode) => {
+          if(node.level === 0) {
+            return this.rootNodeSpecialSettings ? this.rootNodeSize : this.graphNodeSize;
+          }
+
+          return this.graphNodeSize;
+        })
+        .nodeColor((node: GraphNode) => {
+          if(node.level === 0 && this.rootNodeSpecialSettings) {
+            return this.graphRootNodeColor;
+          }
+          return node.entityType == EntityType.DEVICE ? '#ffffff' : '#ffffaa';
         })
         .nodeThreeObject(node => {
-          const sprite = new SpriteText(node.label ? node.label : node.name);
+          const sprite = new SpriteText(node.name ? node.name : node.label);
           sprite.color = node.color;
           sprite.textHeight = 8;
 
@@ -345,7 +366,12 @@ export class EntitiesGraphWidgetComponent extends PageComponent implements OnIni
             spriteImg.position.set(0, 0.1, 0);
             spriteImg.renderOrder = 900;
 
-            return spriteImg;
+            (sprite as THREE.Sprite).position.set(0, -(size), 0);
+            const spriteGroup = new THREE.Group();
+            spriteGroup.add(sprite);
+            spriteGroup.add(spriteImg);
+            // return spriteImg;
+            return spriteGroup;
 
           }
 
@@ -353,6 +379,7 @@ export class EntitiesGraphWidgetComponent extends PageComponent implements OnIni
 
         })
         .nodeThreeObjectExtend(true)
+        .nodeLabel(node => null)
     ;
 
     this.graph.graphData(this.graphData);
@@ -373,8 +400,6 @@ export class EntitiesGraphWidgetComponent extends PageComponent implements OnIni
       .d3Force('link')
       .distance(link => this.graphDistanceSize);
 
-    // console.error('ready graph, nodes size tempgraph');console.log(this.graph.nodeVal());
-    // (window as any).tempgraph = this.graph;
   }
 }
 

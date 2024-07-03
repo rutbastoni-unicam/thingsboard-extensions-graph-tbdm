@@ -57,6 +57,8 @@ export class EntitiesGraphWidgetComponent extends PageComponent implements OnIni
   private graphDeviceNodeColor: string;
   private graphNodeSize: number;
   private graphDistanceSize: number;
+  private graphLinkWidth: number;
+  private graphLinkColor: string;
   private rootNodeSpecialSettings: boolean;
   private rootNodeSize: number;
   private graphRootNodeColor: string;
@@ -98,6 +100,8 @@ export class EntitiesGraphWidgetComponent extends PageComponent implements OnIni
     this.graphDeviceNodeColor = graphSettings?.deviceNodeColor || defaultGraphSettings.deviceNodeColor;
     this.graphNodeSize = graphSettings?.nodeSize || defaultGraphSettings.nodeSize;
     this.graphDistanceSize = graphSettings?.linkDistance || defaultGraphSettings.linkDistance;
+    this.graphLinkWidth = graphSettings?.linkWidth || defaultGraphSettings.linkWidth;
+    this.graphLinkColor = graphSettings?.linkColor || defaultGraphSettings.linkColor;
     this.rootNodeSpecialSettings =
       isDefined(graphSettings?.rootNodeSpecialSettings) ?  graphSettings?.rootNodeSpecialSettings : defaultGraphSettings.rootNodeSpecialSettings;
     this.rootNodeSize = graphSettings?.rootNodeSize || defaultGraphSettings.rootNodeSize;
@@ -292,7 +296,8 @@ export class EntitiesGraphWidgetComponent extends PageComponent implements OnIni
                 const graphLink: GraphLink = {
                   source: nodeToProcess.id,
                   target: childDatasource.entityId,
-                  relationType: childRelationType
+                  relationType: childRelationType,
+                  color: this.graphLinkColor
                 };
                 this.graphData.links.push(graphLink);
               });
@@ -333,6 +338,7 @@ export class EntitiesGraphWidgetComponent extends PageComponent implements OnIni
         .backgroundColor(this.graphBackgroundColor)
         .height(this.graphDomElement.clientHeight)
         .width(this.graphDomElement.clientWidth)
+        .linkWidth(this.graphLinkWidth)
         .nodeVal((node: GraphNode) => {
           if(node.level === 0) {
             return this.rootNodeSpecialSettings ? this.rootNodeSize : this.graphNodeSize;

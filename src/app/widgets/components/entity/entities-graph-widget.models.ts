@@ -36,6 +36,8 @@ export interface GraphNode {
   childrenNodesLoaded: boolean;
   level: number;
   datasource: GraphNodeDatasource;
+  collapsed?: boolean;
+  childLinks: GraphLink[];
   x?: number;
   y?: number;
   z?: number;

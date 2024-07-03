@@ -1,4 +1,4 @@
-import { AfterViewInit, Component, Input, OnInit, ElementRef, Renderer2 } from '@angular/core';
+import {AfterViewInit, Component, Input, OnInit, ElementRef, Renderer2, ViewEncapsulation} from '@angular/core';
 
 import { EntitiesGraphWidgetSettings, GraphNode, GraphNodeDatasource, GraphLink, defaultGraphWidgetSettings } from './entities-graph-widget.models';
 import {
@@ -23,7 +23,8 @@ import SpriteText from 'three-spritetext';
 @Component({
   selector: 'tb-entities-graph-widget',
   templateUrl: 'entities.graph.widget.component.html',
-  styleUrls: ['entities.graph.widget.component.scss']
+  styleUrls: ['entities.graph.widget.component.scss'],
+  encapsulation: ViewEncapsulation.None
 })
 export class EntitiesGraphWidgetComponent extends PageComponent implements OnInit, AfterViewInit   {
 
@@ -38,13 +39,14 @@ export class EntitiesGraphWidgetComponent extends PageComponent implements OnIni
   public dataLoading = true;
   public dataLoaded = false;
 
-  protected graphData: {nodes: Array<GraphNode>; links: Array<any>} = {
+  protected graphData: {nodes: Array<GraphNode>; links: Array<GraphLink>} = {
     nodes: [],
     links: []
   };
 
   protected nodesMap = {};
   private nodesToProcess: Array<GraphNode> = [];
+  private rootNodes: Array<GraphNode> = [];
 
   private settings: EntitiesGraphWidgetSettings;
   private widgetConfig: WidgetConfig;
@@ -115,7 +117,7 @@ export class EntitiesGraphWidgetComponent extends PageComponent implements OnIni
 
   ngAfterViewInit(): void {
     const nativeElement = this.elementRef.nativeElement;
-    this.graphDomElement = nativeElement.querySelector('#graph-container');
+    this.graphDomElement = nativeElement.querySelector('.tb-entities-graph-container');
     this.renderer.setStyle(this.graphDomElement, 'background-color', this.graphBackgroundColor);
 
     if(this.ctx.dashboardService.currentUrl === '/widget-editor' && Array.isArray(this.debugAssets)
@@ -178,6 +180,7 @@ export class EntitiesGraphWidgetComponent extends PageComponent implements OnIni
 
     this.nodesMap = {};
     this.nodesToProcess = [];
+    this.rootNodes = [];
     this.graphData = {nodes: [], links: []};
 
     this.datasources.forEach((childDatasource, index) => {
@@ -213,10 +216,14 @@ export class EntitiesGraphWidgetComponent extends PageComponent implements OnIni
         entityType: childDatasource.entityType,
         childrenNodesLoaded: false,
         level: level,
-        datasource: childDatasource
+        datasource: childDatasource,
+        childLinks: []
       };
       this.nodesToProcess.push(nodeToProcess);
       this.nodesMap[entityId] = nodeToProcess;
+      if(level == 0) {
+        this.rootNodes.push(nodeToProcess);
+      }
     }
   }
 
@@ -321,11 +328,51 @@ export class EntitiesGraphWidgetComponent extends PageComponent implements OnIni
       this.graphData.nodes.push(nodeToProcess);
     }
 
+    this.graphData.links.forEach(link => {
+      this.nodesMap[link.source].childLinks.push(link);
+    });
+
     this.dataLoading = false;
     this.dataLoaded = true;
     this.widgetComponent.displayNoData = this.isEmpty();
     this.ctx.detectChanges();
     this.renderGraph();
+  }
+
+  private traverseTree(node: GraphNode) {
+    const visibleNodes: Array<GraphNode> = [];
+    const visibleLinks: Array<GraphLink> = [];
+
+    visibleNodes.push(node);
+
+    if(!node.collapsed) {
+      visibleLinks.push(...node.childLinks);
+
+      node.childLinks.forEach(childLink => {
+        //3d Graph transforms links while rendering so they become objects
+        const targetId = typeof(childLink.target) === 'string' ? childLink.target : (childLink.target as any).id;
+        const childNode = this.nodesMap[targetId];
+
+        const traversedTree = this.traverseTree(childNode);
+        visibleNodes.push(...traversedTree.nodes);
+        visibleLinks.push(...traversedTree.links);
+      });
+    }
+
+    return { nodes: visibleNodes, links: visibleLinks };
+  }
+
+  private getPrunedTree() {
+    const visibleNodes = [];
+    const visibleLinks = [];
+
+    this.rootNodes.forEach(rootNode => {
+      const traversedTree = this.traverseTree(rootNode);
+      visibleNodes.push(...traversedTree.nodes);
+      visibleLinks.push(...traversedTree.links);
+    });
+
+    return { nodes: visibleNodes, links: visibleLinks };
   }
 
   private renderGraph() {
@@ -386,6 +433,32 @@ export class EntitiesGraphWidgetComponent extends PageComponent implements OnIni
         })
         .nodeThreeObjectExtend(true)
         .nodeLabel(node => null)
+        .onNodeHover((node: GraphNode) => {
+          // Devices are not collapsible since they could be related to each other (circular graph)
+          // The same is for assets without children
+          if(!node || node.entityType == EntityType.DEVICE || !node.childLinks.length) {
+            this.graphDomElement.style.cursor = 'default';
+            return;
+          }
+
+          this.graphDomElement.style.cursor = node.collapsed ? 'crosshair' : 'grab';
+        })
+        .onNodeClick((node: GraphNode) => {
+          if(!node || node.entityType == EntityType.DEVICE || !node.childLinks.length) {
+            return;
+          }
+
+          // Toggle collapsed state
+          node.collapsed = !node.collapsed;
+
+          //Also fix position, because after collapsing, it could disappear from screen
+          node.fx = node.x;
+          node.fy = node.y;
+          node.fz = node.z;
+
+          this.graph.graphData(this.getPrunedTree());
+          this.graph.d3ReheatSimulation();
+        });
     ;
 
     this.graph.graphData(this.graphData);

@@ -11,6 +11,12 @@
       .clickable {
         cursor: inherit;
       }
+
+      .lil-gui.root {
+        position: absolute;
+        top: 0;
+        right: 0;
+      }
     }
   }
 }

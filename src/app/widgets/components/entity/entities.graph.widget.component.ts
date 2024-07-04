@@ -1,24 +1,48 @@
-import {AfterViewInit, Component, Input, OnInit, ElementRef, Renderer2, ViewEncapsulation} from '@angular/core';
+import {AfterViewInit, Component, ElementRef, Input, OnInit, Renderer2, ViewEncapsulation} from '@angular/core';
 
-import { EntitiesGraphWidgetSettings, GraphNode, GraphNodeDatasource, GraphLink, defaultGraphWidgetSettings } from './entities-graph-widget.models';
 import {
-  AliasFilterType, Datasource, EntityType, PageComponent, WidgetConfig, widgetType, DatasourceType, EntityRelationsQuery,
-  EntitySearchDirection, RelationTypeGroup
+  defaultGraphWidgetSettings,
+  EntitiesGraphWidgetSettings,
+  GraphLink,
+  GraphNode,
+  GraphNodeDatasource
+} from './entities-graph-widget.models';
+import {
+  AliasFilterType,
+  Authority,
+  Datasource,
+  DatasourceType,
+  DeviceInfo,
+  EntityRelationsQuery,
+  EntitySearchDirection,
+  EntityType,
+  PageComponent,
+  PageData,
+  PageLink,
+  RelationTypeGroup,
+  WidgetConfig,
+  widgetType,
+  CONTAINS_TYPE
 } from '@shared/public-api';
-import { RelationsQueryFilter } from '@shared/models/alias.models';
-import {IWidgetSubscription, WidgetSubscriptionOptions, UtilsService, WidgetSubscription, isDefined } from '@core/public-api';
-import { WidgetComponent } from '@home/components/widget/widget.component';
-import { WidgetContext } from '../../models/widget-component.models';
-import { Store} from '@ngrx/store';
-import { AppState} from '@core/core.state';
+import {RelationsQueryFilter} from '@shared/models/alias.models';
+import {
+  getCurrentAuthUser,
+  isDefined,
+  IWidgetSubscription,
+  UtilsService,
+  WidgetSubscription,
+  WidgetSubscriptionOptions
+} from '@core/public-api';
+import {WidgetComponent} from '@home/components/widget/widget.component';
+import {WidgetContext} from '../../models/widget-component.models';
+import {Store} from '@ngrx/store';
+import {AppState} from '@core/core.state';
 
-import ForceGraph3D, {
-  ConfigOptions,
-  ForceGraph3DInstance,
-} from '3d-force-graph';
+import ForceGraph3D, {ForceGraph3DInstance} from '3d-force-graph';
 import * as THREE from 'three';
 import SpriteText from 'three-spritetext';
-
+import {GUI} from 'lil-gui';
+import {map, Observable} from "rxjs";
 
 @Component({
   selector: 'tb-entities-graph-widget',
@@ -68,6 +92,7 @@ export class EntitiesGraphWidgetComponent extends PageComponent implements OnIni
   private deviceIcon;
 
   private graphDomElement: HTMLElement =  null;
+  private openedRelationsTooltip: GUI = null;
 
   private graph!: ForceGraph3DInstance;
 
@@ -191,6 +216,8 @@ export class EntitiesGraphWidgetComponent extends PageComponent implements OnIni
   }
 
   public onResize() {
+    this.closeRelationsTooltipIfOpened();
+
     if(!this.dataLoaded) {
       return;
     }
@@ -375,6 +402,10 @@ export class EntitiesGraphWidgetComponent extends PageComponent implements OnIni
     return { nodes: visibleNodes, links: visibleLinks };
   }
 
+  private getNameOrLabel(node: GraphNode | DeviceInfo): string {
+    return node.name ? node.name : node.label;
+  }
+
   private renderGraph() {
     if(!this.dataLoaded) {
       return;
@@ -400,7 +431,7 @@ export class EntitiesGraphWidgetComponent extends PageComponent implements OnIni
           return node.entityType == EntityType.DEVICE ? '#ffffff' : '#ffffaa';
         })
         .nodeThreeObject(node => {
-          const sprite = new SpriteText(node.name ? node.name : node.label);
+          const sprite = new SpriteText(this.getNameOrLabel(node));
           sprite.color = node.color;
           sprite.textHeight = 8;
 
@@ -444,6 +475,8 @@ export class EntitiesGraphWidgetComponent extends PageComponent implements OnIni
           this.graphDomElement.style.cursor = node.collapsed ? 'crosshair' : 'grab';
         })
         .onNodeClick((node: GraphNode) => {
+          this.closeRelationsTooltipIfOpened();
+
           if(!node || node.entityType == EntityType.DEVICE || !node.childLinks.length) {
             return;
           }
@@ -458,8 +491,145 @@ export class EntitiesGraphWidgetComponent extends PageComponent implements OnIni
 
           this.graph.graphData(this.getPrunedTree());
           this.graph.d3ReheatSimulation();
-        });
+        })
+        .onLinkClick(event => this.closeRelationsTooltipIfOpened())
+        .onLinkRightClick(event => this.closeRelationsTooltipIfOpened())
+        .onBackgroundClick(event => this.closeRelationsTooltipIfOpened())
+        .onBackgroundRightClick(event => this.closeRelationsTooltipIfOpened())
+        .onNodeRightClick((node: GraphNode, event) => {
+          // If another tooltip was opened, close it
+          this.closeRelationsTooltipIfOpened();
+
+          //Only allow this kind of operation if authenticated user is a tenant or a customer (kind of users allowed to
+          // have devices to query for)
+          const authUser = getCurrentAuthUser(this.store);
+          if(!authUser || (authUser.authority !== Authority.TENANT_ADMIN && authUser.authority !== Authority.CUSTOMER_USER)) {
+            return;
+          }
+
+          this.openedRelationsTooltip = new GUI( {
+            container: this.graphDomElement.querySelector('.scene-container'),
+            title: this.getNameOrLabel(node)
+          });
+
+          //Specialize tooltip if it's an asset or device
+          if(node.entityType == EntityType.ASSET) {
+            //Get devices list from api
+            const pageLink = new PageLink(100, 0);
+
+            //Api to call is different, depending if authenticated user is tenant or customer
+            let devicesListResult: Observable<PageData<DeviceInfo>> = null;
+            if(authUser.authority === Authority.TENANT_ADMIN) {
+              devicesListResult = this.ctx.deviceService.getTenantDeviceInfos(pageLink);
+            } else {
+              const customerId = authUser.customerId;
+              devicesListResult = this.ctx.deviceService.getCustomerDeviceInfos(customerId, pageLink);
+            }
+
+            //Exclude devices already contained into some other asset
+            devicesListResult
+              .pipe(
+                map(pageData => {
+                  return pageData.data.filter((deviceInfo) => {
+                    return !this.graphData.nodes.some(
+                      graphNode => {
+                        return (graphNode.entityType === EntityType.ASSET &&
+                          graphNode.childLinks.some(childLink => {
+                            const target: GraphNode = childLink.target as unknown as GraphNode;
+                            return target.entityType === EntityType.DEVICE && target.id === deviceInfo.id.id;
+                          }));
+                      }
+                    );
+                  });
+                })
+              )
+              .subscribe(devicesOutput => {
+                //Check if interface is still opened
+                if(!this.openedRelationsTooltip) {
+                  return;
+                }
+
+              const devicesList = {};
+              devicesOutput.reduce((acc, item) => {
+                acc[this.getNameOrLabel(item)] = item.id.id;
+                return acc;
+              }, devicesList);
+
+              const addDeviceControl = {
+                'Add device': null,
+                'Confirm': () => {
+                  const deviceSelectedId = addDeviceControl["Add device"];
+                  if(!deviceSelectedId) {
+                    return;
+                  }
+
+                  //Find the object in devices obtained from API
+                  const deviceObject = devicesOutput.find(singleDevice => singleDevice.id.id === deviceSelectedId);
+
+                  //Create relation with asset and add to graph
+                  this.ctx.entityRelationService.saveRelation({
+                    to: {entityType: EntityType.DEVICE, id: deviceSelectedId},
+                    type: CONTAINS_TYPE,
+                    typeGroup: RelationTypeGroup.COMMON,
+                    from: {entityType: EntityType.ASSET, id: node.id}})
+                    .subscribe(() => {
+                      //Update the graph!
+                      const deviceGraphNode: GraphNode = {
+                        childLinks: [],
+                        childrenNodesLoaded: false,
+                        datasource: undefined,
+                        entityType: EntityType.DEVICE,
+                        id: deviceSelectedId,
+                        label: deviceObject.label,
+                        level: (node.level + 1),
+                        name: deviceObject.name
+                      };
+                      this.graphData.nodes.push(deviceGraphNode);
+                      const graphLink: GraphLink  = {
+                        color: this.graphLinkColor, relationType: CONTAINS_TYPE, source: node.id, target: deviceSelectedId
+                      };
+                      this.graphData.links.push(graphLink);
+                      this.graph.graphData(this.graphData);
+
+                      //TODO get possibile managed devices
+                    });
+                }
+              };
+              const addDeviceField = this.openedRelationsTooltip.add(addDeviceControl, 'Add device', devicesList);
+              const confirmButton = this.openedRelationsTooltip.add(addDeviceControl, 'Confirm');
+              //Disabled until a device is chosen
+              confirmButton.disable();
+              addDeviceField.onChange( value => {
+                if(value) {
+                  confirmButton.enable();
+                }
+              });
+            });
+
+          } else {
+            // controls
+            const key = 'DAG ' + node.name;
+            const controls = { key: 'lr'};
+            const control2s = { test: 'lr'};
+
+            this.openedRelationsTooltip.add(controls, key, ['lr', 'td', 'zout', 'radialout', null]);
+            this.openedRelationsTooltip.add(control2s, 'Work in progress', ['lr', 'td', 'zout', 'radialout', null])
+              .onChange(orientation => { console.error('dat ' + orientation);});
+          }
+
+          // nodeToProcess.entityType === EntityType.ASSET ? [EntityType.ASSET, EntityType.DEVICE] : [EntityType.DEVICE];
+
+          //TODO if too much on right, calc left to make it visible
+          this.openedRelationsTooltip.domElement.style.top = event.offsetY + 'px';
+          this.openedRelationsTooltip.domElement.style.left = event.offsetX + 'px';
+          (window as any).myguiinstance = this.openedRelationsTooltip;
+        })
     ;
+
+    // If zoom, panning or rotation changes, close possible gui tooltips which coordinates don't match the node anymore
+    (this.graph.controls() as HTMLElement).addEventListener( 'change', (input) => {
+      this.closeRelationsTooltipIfOpened();
+    } );
 
     this.graph.graphData(this.graphData);
       // .zoomToFit(1000, 5, (node: object) => {
@@ -479,6 +649,13 @@ export class EntitiesGraphWidgetComponent extends PageComponent implements OnIni
       .d3Force('link')
       .distance(link => this.graphDistanceSize);
 
+  }
+
+  private closeRelationsTooltipIfOpened() {
+    if(this.openedRelationsTooltip) {
+      this.openedRelationsTooltip.close().destroy();
+      this.openedRelationsTooltip = null;
+    }
   }
 }
 

@@ -8,7 +8,9 @@ export interface EntitiesGraphWidgetSettings {
     nodeSize?: number;
     linkDistance?: number;
     linkWidth?: number;
+    linkArrowLength?: number;
     linkColor?: string;
+    linkManagedDevicesColor?: string;
     rootNodeSpecialSettings?: boolean;
     rootNodeSize?: number;
     rootNodeColor?: string;
@@ -61,7 +63,9 @@ export const defaultGraphWidgetSettings: any = {
     nodeSize: 100,
     linkDistance: 100,
     linkWidth: 5,
+    linkArrowLength: 15,
     linkColor: '#f0f0f0',
+    linkManagedDevicesColor: '#f9a19b',
     rootNodeSpecialSettings: true,
     rootNodeSize: 500,
     rootNodeColor: '#f9a19b', //Default light blue like in Thingsboard theme - rgb(249, 161, 155)

@@ -84,7 +84,9 @@ export class EntitiesGraphWidgetComponent extends PageComponent implements OnIni
   private graphNodeSize: number;
   private graphDistanceSize: number;
   private graphLinkWidth: number;
+  private graphLinkArrowLength: number;
   private graphLinkColor: string;
+  private graphLinkManagedDevicesColor: string;
   private rootNodeSpecialSettings: boolean;
   private rootNodeSize: number;
   private graphRootNodeColor: string;
@@ -128,7 +130,9 @@ export class EntitiesGraphWidgetComponent extends PageComponent implements OnIni
     this.graphNodeSize = graphSettings?.nodeSize || defaultGraphSettings.nodeSize;
     this.graphDistanceSize = graphSettings?.linkDistance || defaultGraphSettings.linkDistance;
     this.graphLinkWidth = graphSettings?.linkWidth || defaultGraphSettings.linkWidth;
+    this.graphLinkArrowLength = graphSettings?.linkArrowLength || defaultGraphSettings.linkArrowLength;
     this.graphLinkColor = graphSettings?.linkColor || defaultGraphSettings.linkColor;
+    this.graphLinkManagedDevicesColor = graphSettings?.linkManagedDevicesColor || defaultGraphSettings.linkManagedDevicesColor;
     this.rootNodeSpecialSettings =
       isDefined(graphSettings?.rootNodeSpecialSettings) ?  graphSettings?.rootNodeSpecialSettings : defaultGraphSettings.rootNodeSpecialSettings;
     this.rootNodeSize = graphSettings?.rootNodeSize || defaultGraphSettings.rootNodeSize;
@@ -331,7 +335,7 @@ export class EntitiesGraphWidgetComponent extends PageComponent implements OnIni
                   source: nodeToProcess.id,
                   target: childDatasource.entityId,
                   relationType: childRelationType,
-                  color: this.graphLinkColor
+                  color: childRelationType === CONTAINS_TYPE ? this.graphLinkColor : this.graphLinkManagedDevicesColor
                 };
                 this.graphData.links.push(graphLink);
               });
@@ -405,7 +409,31 @@ export class EntitiesGraphWidgetComponent extends PageComponent implements OnIni
       visibleLinks.push(...traversedTree.links);
     });
 
-    return { nodes: visibleNodes, links: visibleLinks };
+    //Filter duplicates (if a node is pointed from multiple nodes, let's say a device contained in a room and managed
+    // by another device
+    const visibleNodesIds = [];
+    const visibleNodesFiltered = [];
+    visibleNodes.forEach(visibleNode => {
+      if(!visibleNodesIds.includes(visibleNode.id)) {
+        visibleNodesIds.push(visibleNode.id);
+        visibleNodesFiltered.push(visibleNode);
+      }
+    });
+
+    const visibleLinksIds = [];
+    const visibleLinksFiltered = [];
+    visibleLinks.forEach(visibleLink => {
+      const sourceId = typeof (visibleLink.source) === 'string' ? visibleLink.source : (visibleLink.source as GraphNode).id;
+      const targetId = typeof (visibleLink.target) === 'string' ? visibleLink.target : (visibleLink.target as GraphNode).id;
+      const compositeId = sourceId + '_' + targetId;
+
+      if(!visibleLinksIds.includes(compositeId)) {
+        visibleLinksIds.push(compositeId);
+        visibleLinksFiltered.push(visibleLink);
+      }
+    });
+
+    return { nodes: visibleNodesFiltered, links: visibleLinksFiltered };
   }
 
   private getNameOrLabel(node: GraphNode | DeviceInfo): string {
@@ -423,6 +451,9 @@ export class EntitiesGraphWidgetComponent extends PageComponent implements OnIni
         .height(this.graphDomElement.clientHeight)
         .width(this.graphDomElement.clientWidth)
         .linkWidth(this.graphLinkWidth)
+        .linkDirectionalArrowLength(this.graphLinkArrowLength)
+        .linkDirectionalArrowRelPos(1)
+        .linkLabel('relationType')
         .nodeVal((node: GraphNode) => {
           if(node.level === 0) {
             return this.rootNodeSpecialSettings ? this.rootNodeSize : this.graphNodeSize;

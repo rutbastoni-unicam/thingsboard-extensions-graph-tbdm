@@ -10,6 +10,7 @@ import {
 import {
   AliasFilterType,
   Authority,
+  CONTAINS_TYPE,
   Datasource,
   DatasourceType,
   DeviceInfo,
@@ -21,8 +22,7 @@ import {
   PageLink,
   RelationTypeGroup,
   WidgetConfig,
-  widgetType,
-  CONTAINS_TYPE
+  widgetType
 } from '@shared/public-api';
 import {RelationsQueryFilter} from '@shared/models/alias.models';
 import {
@@ -355,8 +355,14 @@ export class EntitiesGraphWidgetComponent extends PageComponent implements OnIni
       this.graphData.nodes.push(nodeToProcess);
     }
 
+    //Clean all possible calculated before childlinks
+    this.graphData.nodes.forEach(graphNode => {
+      graphNode.childLinks = [];
+    });
+
     this.graphData.links.forEach(link => {
-      this.nodesMap[link.source].childLinks.push(link);
+      const sourceId = typeof (link.source) === 'string' ? link.source : (link.source as GraphNode).id;
+      this.nodesMap[sourceId].childLinks.push(link);
     });
 
     this.dataLoading = false;
@@ -507,13 +513,14 @@ export class EntitiesGraphWidgetComponent extends PageComponent implements OnIni
             return;
           }
 
+          const openedRelationsTooltipContainer = this.graphDomElement.querySelector('.scene-container') as HTMLElement;
           this.openedRelationsTooltip = new GUI( {
-            container: this.graphDomElement.querySelector('.scene-container'),
+            container: openedRelationsTooltipContainer,
             title: this.getNameOrLabel(node)
           });
 
           //Specialize tooltip if it's an asset or device
-          if(node.entityType == EntityType.ASSET) {
+          if(node.entityType === EntityType.ASSET) {
             //Get devices list from api
             const pageLink = new PageLink(100, 0);
 
@@ -573,25 +580,27 @@ export class EntitiesGraphWidgetComponent extends PageComponent implements OnIni
                     typeGroup: RelationTypeGroup.COMMON,
                     from: {entityType: EntityType.ASSET, id: node.id}})
                     .subscribe(() => {
-                      //Update the graph!
-                      const deviceGraphNode: GraphNode = {
-                        childLinks: [],
-                        childrenNodesLoaded: false,
-                        datasource: undefined,
-                        entityType: EntityType.DEVICE,
-                        id: deviceSelectedId,
-                        label: deviceObject.label,
-                        level: (node.level + 1),
-                        name: deviceObject.name
-                      };
-                      this.graphData.nodes.push(deviceGraphNode);
+                      // Add new graph relation for parent node
                       const graphLink: GraphLink  = {
                         color: this.graphLinkColor, relationType: CONTAINS_TYPE, source: node.id, target: deviceSelectedId
                       };
                       this.graphData.links.push(graphLink);
-                      this.graph.graphData(this.graphData);
 
-                      //TODO get possibile managed devices
+                      //Create a 'datasource' for the new device node
+                      const addedDeviceDatasource: GraphNodeDatasource = {
+                        nodeId: deviceSelectedId,
+                        entityId: deviceSelectedId,
+                        entityLabel: deviceObject.label,
+                        entityName: deviceObject.name,
+                        entityType: EntityType.DEVICE,
+                        dataKeys: node.datasource.dataKeys,
+                        filterId: node.datasource.filterId
+                      };
+
+                      this.datasourceToNode(addedDeviceDatasource, (node.level + 1));
+
+                      //Rerun traverse graph algorithm to find possible chain of managed device
+                      this.processNodes();
                     });
                 }
               };
@@ -619,10 +628,19 @@ export class EntitiesGraphWidgetComponent extends PageComponent implements OnIni
 
           // nodeToProcess.entityType === EntityType.ASSET ? [EntityType.ASSET, EntityType.DEVICE] : [EntityType.DEVICE];
 
-          //TODO if too much on right, calc left to make it visible
-          this.openedRelationsTooltip.domElement.style.top = event.offsetY + 'px';
-          this.openedRelationsTooltip.domElement.style.left = event.offsetX + 'px';
-          (window as any).myguiinstance = this.openedRelationsTooltip;
+          if((this.openedRelationsTooltip.domElement.clientWidth + event.offsetX) > openedRelationsTooltipContainer.clientWidth) {
+            this.openedRelationsTooltip.domElement.style.right = '0';
+          } else {
+            this.openedRelationsTooltip.domElement.style.left = event.offsetX + 'px';
+          }
+
+          if((this.openedRelationsTooltip.domElement.clientHeight + event.offsetY) > openedRelationsTooltipContainer.clientHeight) {
+            this.openedRelationsTooltip.domElement.style.bottom = '0';
+            this.openedRelationsTooltip.domElement.style.top = 'unset';
+          } else {
+            this.openedRelationsTooltip.domElement.style.top = event.offsetY + 'px';
+          }
+
         })
     ;
 
@@ -631,7 +649,7 @@ export class EntitiesGraphWidgetComponent extends PageComponent implements OnIni
       this.closeRelationsTooltipIfOpened();
     } );
 
-    this.graph.graphData(this.graphData);
+    this.graph.graphData(this.getPrunedTree());
       // .zoomToFit(1000, 5, (node: object) => {
       //   // console.log('node include?');console.log(node);
       //   return true;

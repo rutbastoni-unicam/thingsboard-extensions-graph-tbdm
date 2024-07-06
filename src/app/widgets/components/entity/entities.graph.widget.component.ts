@@ -399,6 +399,10 @@ export class EntitiesGraphWidgetComponent extends PageComponent implements OnIni
     return { nodes: visibleNodes, links: visibleLinks };
   }
 
+  private renderPrunedGraph() {
+    this.graph.graphData(this.getPrunedTree());
+  }
+
   private getPrunedTree() {
     const visibleNodes = [];
     const visibleLinks = [];
@@ -526,7 +530,7 @@ export class EntitiesGraphWidgetComponent extends PageComponent implements OnIni
           node.fy = node.y;
           node.fz = node.z;
 
-          this.graph.graphData(this.getPrunedTree());
+          this.renderPrunedGraph();
           this.graph.d3ReheatSimulation();
         })
         .onLinkClick(event => this.closeRelationsTooltipIfOpened())
@@ -595,7 +599,7 @@ export class EntitiesGraphWidgetComponent extends PageComponent implements OnIni
 
               const addDeviceControl = {
                 'Add device': null,
-                'Confirm': () => {
+                'Confirm add': () => {
                   const deviceSelectedId = addDeviceControl["Add device"];
                   if(!deviceSelectedId) {
                     return;
@@ -636,7 +640,7 @@ export class EntitiesGraphWidgetComponent extends PageComponent implements OnIni
                 }
               };
               const addDeviceField = this.openedRelationsTooltip.add(addDeviceControl, 'Add device', devicesList);
-              const confirmButton = this.openedRelationsTooltip.add(addDeviceControl, 'Confirm');
+              const confirmButton = this.openedRelationsTooltip.add(addDeviceControl, 'Confirm add');
               //Disabled until a device is chosen
               confirmButton.disable();
               addDeviceField.onChange( value => {
@@ -644,6 +648,58 @@ export class EntitiesGraphWidgetComponent extends PageComponent implements OnIni
                   confirmButton.enable();
                 }
               });
+
+                // If asset already contains some device, display control to possibly remove them
+                const containedDevices = this.graphData.links.filter(graphLink => {
+                  const source = graphLink.source as GraphNode;
+                  const target = graphLink.target as GraphNode;
+
+                  return source.id === node.id && target.entityType === EntityType.DEVICE && graphLink.relationType === CONTAINS_TYPE;
+                });
+
+                if(containedDevices.length) {
+                  const containedDevicesList = {};
+                  containedDevices.reduce((acc, item) => {
+                    const target = item.target as GraphNode;
+                    acc[this.getNameOrLabel(target)] = target.id;
+                    return acc;
+                  }, containedDevicesList);
+
+                  const removeDeviceCommand = 'Remove Device';
+                  addDeviceControl[removeDeviceCommand] = null;
+                  const removeDeviceConfirmCommand = 'Confirm remove';
+                  addDeviceControl[removeDeviceConfirmCommand] = () => {
+                    const deviceToRemoveSelectedId = addDeviceControl[removeDeviceCommand];
+                    if(!deviceToRemoveSelectedId) {
+                      return;
+                    }
+
+                    this.ctx.entityRelationService.deleteRelation(
+                      {id: node.id, entityType: EntityType.ASSET},
+                      CONTAINS_TYPE,
+                      {id: deviceToRemoveSelectedId, entityType: EntityType.DEVICE}
+                    ).subscribe(() => {
+                      //Remove relation from parent node
+                      const childLinkIndex = node.childLinks.findIndex((graphLink) => {
+                        return (graphLink.target as GraphNode).id === deviceToRemoveSelectedId;
+                      });
+
+                      const childlink = node.childLinks.splice(childLinkIndex, 1);
+
+                      this.removeSubgraph(childlink[0]);
+                    });
+
+                  };
+                  const removeDeviceField = this.openedRelationsTooltip.add(addDeviceControl, removeDeviceCommand, containedDevicesList);
+                  const confirmRemoveButton = this.openedRelationsTooltip.add(addDeviceControl, removeDeviceConfirmCommand);
+                  //Disabled until a device to remove is chosen
+                  confirmRemoveButton.disable();
+                  removeDeviceField.onChange( value => {
+                    if(value) {
+                      confirmRemoveButton.enable();
+                    }
+                  });
+                }
             });
 
           } else {
@@ -657,8 +713,12 @@ export class EntitiesGraphWidgetComponent extends PageComponent implements OnIni
               .onChange(orientation => { console.error('dat ' + orientation);});
           }
 
-          // nodeToProcess.entityType === EntityType.ASSET ? [EntityType.ASSET, EntityType.DEVICE] : [EntityType.DEVICE];
+          //Check if interface is still opened
+          if(!this.openedRelationsTooltip) {
+            return;
+          }
 
+          //If tooltip is opened too much on the right, or in the bottom (nodes close to the scene container edges) adjust position
           if((this.openedRelationsTooltip.domElement.clientWidth + event.offsetX) > openedRelationsTooltipContainer.clientWidth) {
             this.openedRelationsTooltip.domElement.style.right = '0';
           } else {
@@ -680,7 +740,7 @@ export class EntitiesGraphWidgetComponent extends PageComponent implements OnIni
       this.closeRelationsTooltipIfOpened();
     } );
 
-    this.graph.graphData(this.getPrunedTree());
+    this.renderPrunedGraph();
       // .zoomToFit(1000, 5, (node: object) => {
       //   // console.log('node include?');console.log(node);
       //   return true;
@@ -698,6 +758,41 @@ export class EntitiesGraphWidgetComponent extends PageComponent implements OnIni
       .d3Force('link')
       .distance(link => this.graphDistanceSize);
 
+  }
+
+  private removeSubgraph(connectionToRemove: GraphLink) {
+    const connectionsToRemove: GraphLink[] = [connectionToRemove];
+
+    while (connectionsToRemove.length){
+      const currentRemovingConnection = connectionsToRemove.shift();
+      const removingSource = currentRemovingConnection.source as GraphNode;
+      const removingTarget = currentRemovingConnection.target as GraphNode;
+
+      // Remove relation from drawn graph
+      this.graphData.links = this.graphData.links.filter(graphLink => {
+        const source = graphLink.source as GraphNode;
+        const target = graphLink.target as GraphNode;
+
+        return source.id !== removingSource.id || target.id !== removingTarget.id;
+      });
+
+      //If the device has no more connections, remove it from graph recursively
+      const hasOtherParentConnections = this.graphData.links.some((graphLink) => {
+        return (graphLink.target as GraphNode).id === removingTarget.id;
+      });
+      if(!hasOtherParentConnections) {
+        //Remove the node from graph
+        const nodeToDeleteIndex = this.graphData.nodes.findIndex(node => {
+          return node.id === removingTarget.id;
+        });
+        const deletedNode = this.graphData.nodes.splice(nodeToDeleteIndex, 1);
+
+        // Test child links if something else has to be removed
+        connectionsToRemove.push(...deletedNode[0].childLinks);
+      }
+    }
+
+    this.renderPrunedGraph();
   }
 
   private closeRelationsTooltipIfOpened() {

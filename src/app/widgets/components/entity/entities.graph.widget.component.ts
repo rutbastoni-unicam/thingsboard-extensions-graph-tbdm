@@ -763,9 +763,8 @@ export class EntitiesGraphWidgetComponent extends PageComponent implements OnIni
             this.getAvailableDevicesForAuthUser()
               .pipe(
                 map(pageData => {
-                  console.log(this.ctx);console.error('should filter all these');console.log(pageData);
                   return pageData.data.filter((deviceInfo) => {
-                    return !this.graphData.links.some(
+                    return deviceInfo.id.id !== node.id && !this.graphData.links.some(
                       graphLink => {
                         const source = graphLink.source as GraphNode;
                         const target = graphLink.target as GraphNode;
@@ -778,55 +777,107 @@ export class EntitiesGraphWidgetComponent extends PageComponent implements OnIni
                 })
               )
               .subscribe(devicesOutput => {
-                console.error('filtered');console.log(devicesOutput);
                 //Check if interface is still opened
                 if(!this.openedRelationsTooltip) {
                   return;
                 }
 
-                const devicesList = {};
-                devicesOutput.reduce((acc, item) => {
-                  acc[this.getNameOrLabel(item)] = item.id.id;
-                  return acc;
-                }, devicesList);
-
-                const manageDeviceKey = 'Manage device';
-                const confirmManageDeviceKey = 'Confirm manage';
                 const manageDevicesControl = {};
-                manageDevicesControl[manageDeviceKey] = null;
-                manageDevicesControl[confirmManageDeviceKey] = () => {
 
-                  const deviceSelectedId = manageDevicesControl[manageDeviceKey];
-                  if(!deviceSelectedId) {
-                    return;
-                  }
+                if(devicesOutput.length){
+                  // Could manage some 'free' device, so option is created for that purpose
+                  const devicesList = {};
+                  devicesOutput.reduce((acc, item) => {
+                    acc[this.getNameOrLabel(item)] = item.id.id;
+                    return acc;
+                  }, devicesList);
 
-                  //Api call to create relation
-                  this.ctx.entityRelationService.saveRelation(
-                    {
-                      from: { entityType: EntityType.DEVICE, id: node.id },
-                      to: { entityType:EntityType.DEVICE, id: deviceSelectedId },
-                      type: MANAGES_TYPE,
-                      typeGroup: RelationTypeGroup.COMMON
+                  const manageDeviceKey = 'Manage device';
+                  const confirmManageDeviceKey = 'Confirm manage';
+                  manageDevicesControl[manageDeviceKey] = null;
+                  manageDevicesControl[confirmManageDeviceKey] = () => {
+
+                    const deviceSelectedId = manageDevicesControl[manageDeviceKey];
+                    if(!deviceSelectedId) {
+                      return;
                     }
-                  )
-                    .subscribe(() => {
-                      // Create new node and add to processing list (retrieve potential subgraph with datasource query)
-                      //Find the object in devices obtained from API
-                      const deviceObject = devicesOutput.find(singleDevice => singleDevice.id.id === deviceSelectedId);
-                      this.addDeviceToGraphForRendering(MANAGES_TYPE, node, deviceObject);
-                    });
-                };
-                const manageDeviceField = this.openedRelationsTooltip.add(manageDevicesControl, manageDeviceKey, devicesList);
-                const confirmManageButton = this.openedRelationsTooltip.add(manageDevicesControl, confirmManageDeviceKey);
 
-                //Disabled until a device is chosen
-                confirmManageButton.disable();
-                manageDeviceField.onChange( value => {
-                  if(value) {
-                    confirmManageButton.enable();
-                  }
-                });
+                    //Api call to create relation
+                    this.ctx.entityRelationService.saveRelation(
+                      {
+                        from: { entityType: EntityType.DEVICE, id: node.id },
+                        to: { entityType:EntityType.DEVICE, id: deviceSelectedId },
+                        type: MANAGES_TYPE,
+                        typeGroup: RelationTypeGroup.COMMON
+                      }
+                    )
+                      .subscribe(() => {
+                        // Create new node and add to processing list (retrieve potential subgraph with datasource query)
+                        //Find the object in devices obtained from API
+                        const deviceObject = devicesOutput.find(singleDevice => singleDevice.id.id === deviceSelectedId);
+                        this.addDeviceToGraphForRendering(MANAGES_TYPE, node, deviceObject);
+                      });
+                  };
+                  const manageDeviceField = this.openedRelationsTooltip.add(manageDevicesControl, manageDeviceKey, devicesList);
+                  const confirmManageButton = this.openedRelationsTooltip.add(manageDevicesControl, confirmManageDeviceKey);
+
+                  //Disabled until a device is chosen
+                  confirmManageButton.disable();
+                  manageDeviceField.onChange( value => {
+                    if(value) {
+                      confirmManageButton.enable();
+                    }
+                  });
+                }
+
+                //Check if this device already manages some other, in that case create the option to let them unmanage
+                if(node.childLinks.length) {
+                  const managedDevicesList = {};
+                  node.childLinks.reduce((acc, item) => {
+                    const target = item.target as GraphNode;
+                    acc[this.getNameOrLabel(target)] = target.id;
+                    return acc;
+                  }, managedDevicesList);
+
+                  const unmanageDeviceKey = 'Unmanage device';
+                  const confirmUnmanageDeviceKey = 'Confirm unmanage';
+                  manageDevicesControl[unmanageDeviceKey] = null;
+                  manageDevicesControl[confirmUnmanageDeviceKey] = () => {
+                    const deviceSelectedId = manageDevicesControl[unmanageDeviceKey];
+                    if(!deviceSelectedId) {
+                      return;
+                    }
+
+                    //Api call to create relation
+                    //deleteRelation(fromId: EntityId, relationType: string, toId: EntityId, config?: RequestConfig): Observable<Object>;
+                    this.ctx.entityRelationService.deleteRelation(
+                      { entityType: EntityType.DEVICE, id: node.id },
+                      MANAGES_TYPE,
+                      { entityType:EntityType.DEVICE, id: deviceSelectedId }
+                    )
+                      .subscribe(() => {
+                        const childLinkIndex = node.childLinks.findIndex((graphLink) => {
+                          return (graphLink.target as GraphNode).id === deviceSelectedId;
+                        });
+
+                        const childlink = node.childLinks.splice(childLinkIndex, 1);
+
+                        //Recursively remove subgraph of unamanaged device
+                        this.removeSubgraph(childlink[0]);
+                      });
+                  };
+                  const unmanageDeviceField = this.openedRelationsTooltip.add(manageDevicesControl, unmanageDeviceKey, managedDevicesList);
+                  const confirmUnmanageButton = this.openedRelationsTooltip.add(manageDevicesControl, confirmUnmanageDeviceKey);
+
+                  //Disabled until a device is chosen
+                  confirmUnmanageButton.disable();
+                  unmanageDeviceField.onChange( value => {
+                    if(value) {
+                      confirmUnmanageButton.enable();
+                    }
+                  });
+                }
+
               });
           }
 

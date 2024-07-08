@@ -42,7 +42,7 @@ import ForceGraph3D, {ForceGraph3DInstance} from '3d-force-graph';
 import * as THREE from 'three';
 import SpriteText from 'three-spritetext';
 import {GUI} from 'lil-gui';
-import {map, Observable} from "rxjs";
+import {concatMap, map, Observable} from "rxjs";
 
 @Component({
   selector: 'tb-entities-graph-widget',
@@ -673,22 +673,7 @@ export class EntitiesGraphWidgetComponent extends PageComponent implements OnIni
                     if(!deviceToRemoveSelectedId) {
                       return;
                     }
-
-                    this.ctx.entityRelationService.deleteRelation(
-                      {id: node.id, entityType: EntityType.ASSET},
-                      CONTAINS_TYPE,
-                      {id: deviceToRemoveSelectedId, entityType: EntityType.DEVICE}
-                    ).subscribe(() => {
-                      //Remove relation from parent node
-                      const childLinkIndex = node.childLinks.findIndex((graphLink) => {
-                        return (graphLink.target as GraphNode).id === deviceToRemoveSelectedId;
-                      });
-
-                      const childlink = node.childLinks.splice(childLinkIndex, 1);
-
-                      this.removeSubgraph(childlink[0]);
-                    });
-
+                    this.removeDeviceFromAsset(node, deviceToRemoveSelectedId);
                   };
                   const removeDeviceField = this.openedRelationsTooltip.add(addDeviceControl, removeDeviceCommand, containedDevicesList);
                   const confirmRemoveButton = this.openedRelationsTooltip.add(addDeviceControl, removeDeviceConfirmCommand);
@@ -703,14 +688,90 @@ export class EntitiesGraphWidgetComponent extends PageComponent implements OnIni
             });
 
           } else {
-            // controls
-            const key = 'DAG ' + node.name;
-            const controls = { key: 'lr'};
-            const control2s = { test: 'lr'};
+            // Find if this device is contained in an asset (could only by managed by another device)
+            // const assetContainer = this.
+            const assetContainer = this.graphData.nodes.find(graphNode =>
+              graphNode.entityType === EntityType.ASSET &&
+                graphNode.childLinks.some(
+                  childLink =>
+                    (childLink.target as unknown as GraphNode).entityType === EntityType.DEVICE && (childLink.target as unknown as GraphNode).id === node.id
+                )
+            );
 
-            this.openedRelationsTooltip.add(controls, key, ['lr', 'td', 'zout', 'radialout', null]);
-            this.openedRelationsTooltip.add(control2s, 'Work in progress', ['lr', 'td', 'zout', 'radialout', null])
-              .onChange(orientation => { console.error('dat ' + orientation);});
+            const deviceControlData  = {};
+            if(assetContainer) {
+              const removeKey = 'Remove from ' + this.getNameOrLabel(assetContainer);
+              deviceControlData[removeKey] = () => { this.removeDeviceFromAsset(assetContainer, node.id) };
+              this.openedRelationsTooltip.add(deviceControlData, removeKey);
+
+              const moveKey = 'Move to another asset';
+              const assetsList = {};
+              this.graphData.nodes.forEach(graphNode => {
+                if(graphNode.entityType === EntityType.ASSET && graphNode.id !== assetContainer.id) {
+                  assetsList[this.getNameOrLabel(graphNode)] = graphNode.id;
+                }
+              });
+
+              const moveConfirmKey = 'Move confirm';
+              deviceControlData[moveKey] = null;
+              deviceControlData[moveConfirmKey] = () => {
+                const assetToMoveSelectedId = deviceControlData[moveKey];
+                if(!assetToMoveSelectedId) {
+                  return;
+                }
+
+                // Delete from old node and add to new (2 api calls)
+                this.ctx.entityRelationService.deleteRelation(
+                  {entityType: EntityType.ASSET, id: assetContainer.id},
+                  CONTAINS_TYPE,
+                  {entityType: EntityType.DEVICE, id: node.id}
+                )
+                  .pipe(
+                    concatMap(() => this.ctx.entityRelationService.saveRelation(
+                      {
+                        from: {entityType: EntityType.ASSET, id: assetToMoveSelectedId},
+                        to: {entityType: EntityType.DEVICE, id: node.id},
+                        type: CONTAINS_TYPE,
+                        typeGroup: RelationTypeGroup.COMMON
+                      }
+                      )
+                    )
+                  )
+                  .subscribe(() => {
+                    // Remove link from old parent
+                    assetContainer.childLinks = assetContainer.childLinks.filter(childLink => {
+                      const targetId = typeof (childLink.target) === 'string' ? childLink.target : (childLink.target as GraphNode).id;
+                      return targetId !== node.id
+                    });
+
+                    // Find link in current graph and change source id to new node
+                    const graphLinkToUpdate = this.graphData.links.find(graphLink => {
+                      const sourceId = typeof (graphLink.source) === 'string' ? graphLink.source : (graphLink.source as GraphNode).id;
+                      const targetId = typeof (graphLink.target) === 'string' ? graphLink.target : (graphLink.target as GraphNode).id;
+                      return sourceId === assetContainer.id && targetId === node.id;
+                    });
+                    const newParent = this.graphData.nodes.find(graphNode => {
+                      return graphNode.entityType === EntityType.ASSET && graphNode.id === assetToMoveSelectedId;
+                    });
+                    graphLinkToUpdate.source = newParent;
+                    newParent.childLinks.push(graphLinkToUpdate);
+
+                    this.renderPrunedGraph();
+                  });
+
+              };
+              const moveDeviceField = this.openedRelationsTooltip.add(deviceControlData, moveKey, assetsList);
+              const moveConfirmButton = this.openedRelationsTooltip.add(deviceControlData, moveConfirmKey);
+              //Disabled until a device is chosen
+              moveConfirmButton.disable();
+              moveDeviceField.onChange( value => {
+                if(value) {
+                  moveConfirmButton.enable();
+                }
+              });
+
+            }
+
           }
 
           //Check if interface is still opened
@@ -758,6 +819,23 @@ export class EntitiesGraphWidgetComponent extends PageComponent implements OnIni
       .d3Force('link')
       .distance(link => this.graphDistanceSize);
 
+  }
+
+  private removeDeviceFromAsset(parentNode: GraphNode, deviceId: string) {
+    this.ctx.entityRelationService.deleteRelation(
+      {id: parentNode.id, entityType: EntityType.ASSET},
+      CONTAINS_TYPE,
+      {id: deviceId, entityType: EntityType.DEVICE}
+    ).subscribe(() => {
+      //Remove relation from parent node
+      const childLinkIndex = parentNode.childLinks.findIndex((graphLink) => {
+        return (graphLink.target as GraphNode).id === deviceId;
+      });
+
+      const childlink = parentNode.childLinks.splice(childLinkIndex, 1);
+
+      this.removeSubgraph(childlink[0]);
+    });
   }
 
   private removeSubgraph(connectionToRemove: GraphLink) {

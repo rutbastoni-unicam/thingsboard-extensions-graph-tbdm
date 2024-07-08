@@ -17,6 +17,7 @@ import {
   EntityRelationsQuery,
   EntitySearchDirection,
   EntityType,
+  MANAGES_TYPE,
   PageComponent,
   PageData,
   PageLink,
@@ -444,6 +445,23 @@ export class EntitiesGraphWidgetComponent extends PageComponent implements OnIni
     return node.name ? node.name : node.label;
   }
 
+  private getAvailableDevicesForAuthUser(): Observable<PageData<DeviceInfo>> {
+    const authUser = getCurrentAuthUser(this.store);
+
+    //Get devices list from api
+    const pageLink = new PageLink(100, 0);
+
+    //Api to call is different, depending if authenticated user is tenant or customer
+    let devicesListResult: Observable<PageData<DeviceInfo>> = null;
+    if(authUser.authority === Authority.TENANT_ADMIN) {
+      devicesListResult = this.ctx.deviceService.getTenantDeviceInfos(pageLink);
+    } else {
+      const customerId = authUser.customerId;
+      devicesListResult = this.ctx.deviceService.getCustomerDeviceInfos(customerId, pageLink);
+    }
+    return devicesListResult;
+  }
+
   private renderGraph() {
     if(!this.dataLoaded) {
       return;
@@ -556,20 +574,8 @@ export class EntitiesGraphWidgetComponent extends PageComponent implements OnIni
 
           //Specialize tooltip if it's an asset or device
           if(node.entityType === EntityType.ASSET) {
-            //Get devices list from api
-            const pageLink = new PageLink(100, 0);
-
-            //Api to call is different, depending if authenticated user is tenant or customer
-            let devicesListResult: Observable<PageData<DeviceInfo>> = null;
-            if(authUser.authority === Authority.TENANT_ADMIN) {
-              devicesListResult = this.ctx.deviceService.getTenantDeviceInfos(pageLink);
-            } else {
-              const customerId = authUser.customerId;
-              devicesListResult = this.ctx.deviceService.getCustomerDeviceInfos(customerId, pageLink);
-            }
-
             //Exclude devices already contained into some other asset
-            devicesListResult
+            this.getAvailableDevicesForAuthUser()
               .pipe(
                 map(pageData => {
                   return pageData.data.filter((deviceInfo) => {
@@ -615,27 +621,7 @@ export class EntitiesGraphWidgetComponent extends PageComponent implements OnIni
                     typeGroup: RelationTypeGroup.COMMON,
                     from: {entityType: EntityType.ASSET, id: node.id}})
                     .subscribe(() => {
-                      // Add new graph relation for parent node
-                      const graphLink: GraphLink  = {
-                        color: this.graphLinkColor, relationType: CONTAINS_TYPE, source: node.id, target: deviceSelectedId
-                      };
-                      this.graphData.links.push(graphLink);
-
-                      //Create a 'datasource' for the new device node
-                      const addedDeviceDatasource: GraphNodeDatasource = {
-                        nodeId: deviceSelectedId,
-                        entityId: deviceSelectedId,
-                        entityLabel: deviceObject.label,
-                        entityName: deviceObject.name,
-                        entityType: EntityType.DEVICE,
-                        dataKeys: node.datasource.dataKeys,
-                        filterId: node.datasource.filterId
-                      };
-
-                      this.datasourceToNode(addedDeviceDatasource, (node.level + 1));
-
-                      //Rerun traverse graph algorithm to find possible chain of managed device
-                      this.processNodes();
+                      this.addDeviceToGraphForRendering(CONTAINS_TYPE, node, deviceObject);
                     });
                 }
               };
@@ -772,6 +758,76 @@ export class EntitiesGraphWidgetComponent extends PageComponent implements OnIni
 
             }
 
+            // Find if there are managable devices (not already managed by another device), and in this case, render option
+            // to manage them
+            this.getAvailableDevicesForAuthUser()
+              .pipe(
+                map(pageData => {
+                  console.log(this.ctx);console.error('should filter all these');console.log(pageData);
+                  return pageData.data.filter((deviceInfo) => {
+                    return !this.graphData.links.some(
+                      graphLink => {
+                        const source = graphLink.source as GraphNode;
+                        const target = graphLink.target as GraphNode;
+
+                        return (source.entityType === EntityType.DEVICE && graphLink.relationType === MANAGES_TYPE &&
+                            target.id === deviceInfo.id.id);
+                      }
+                    );
+                  });
+                })
+              )
+              .subscribe(devicesOutput => {
+                console.error('filtered');console.log(devicesOutput);
+                //Check if interface is still opened
+                if(!this.openedRelationsTooltip) {
+                  return;
+                }
+
+                const devicesList = {};
+                devicesOutput.reduce((acc, item) => {
+                  acc[this.getNameOrLabel(item)] = item.id.id;
+                  return acc;
+                }, devicesList);
+
+                const manageDeviceKey = 'Manage device';
+                const confirmManageDeviceKey = 'Confirm manage';
+                const manageDevicesControl = {};
+                manageDevicesControl[manageDeviceKey] = null;
+                manageDevicesControl[confirmManageDeviceKey] = () => {
+
+                  const deviceSelectedId = manageDevicesControl[manageDeviceKey];
+                  if(!deviceSelectedId) {
+                    return;
+                  }
+
+                  //Api call to create relation
+                  this.ctx.entityRelationService.saveRelation(
+                    {
+                      from: { entityType: EntityType.DEVICE, id: node.id },
+                      to: { entityType:EntityType.DEVICE, id: deviceSelectedId },
+                      type: MANAGES_TYPE,
+                      typeGroup: RelationTypeGroup.COMMON
+                    }
+                  )
+                    .subscribe(() => {
+                      // Create new node and add to processing list (retrieve potential subgraph with datasource query)
+                      //Find the object in devices obtained from API
+                      const deviceObject = devicesOutput.find(singleDevice => singleDevice.id.id === deviceSelectedId);
+                      this.addDeviceToGraphForRendering(MANAGES_TYPE, node, deviceObject);
+                    });
+                };
+                const manageDeviceField = this.openedRelationsTooltip.add(manageDevicesControl, manageDeviceKey, devicesList);
+                const confirmManageButton = this.openedRelationsTooltip.add(manageDevicesControl, confirmManageDeviceKey);
+
+                //Disabled until a device is chosen
+                confirmManageButton.disable();
+                manageDeviceField.onChange( value => {
+                  if(value) {
+                    confirmManageButton.enable();
+                  }
+                });
+              });
           }
 
           //Check if interface is still opened
@@ -819,6 +875,31 @@ export class EntitiesGraphWidgetComponent extends PageComponent implements OnIni
       .d3Force('link')
       .distance(link => this.graphDistanceSize);
 
+  }
+
+  private addDeviceToGraphForRendering(relationType: string, parentNode: GraphNode, deviceObject: DeviceInfo) {
+    // Add new graph relation for parent node
+    const linkColor = relationType === MANAGES_TYPE ? this.graphLinkManagedDevicesColor : this.graphLinkColor;
+    const graphLink: GraphLink  = {
+      color: linkColor, relationType: relationType, source: parentNode.id, target: deviceObject.id.id
+    };
+    this.graphData.links.push(graphLink);
+
+    //Create a 'datasource' for the new device node
+    const addedDeviceDatasource: GraphNodeDatasource = {
+      nodeId: deviceObject.id.id,
+      entityId: deviceObject.id.id,
+      entityLabel: deviceObject.label,
+      entityName: deviceObject.name,
+      entityType: EntityType.DEVICE,
+      dataKeys: parentNode.datasource.dataKeys,
+      filterId: parentNode.datasource.filterId
+    };
+
+    this.datasourceToNode(addedDeviceDatasource, (parentNode.level + 1));
+
+    //Rerun traverse graph algorithm to find possible chain of managed device
+    this.processNodes();
   }
 
   private removeDeviceFromAsset(parentNode: GraphNode, deviceId: string) {

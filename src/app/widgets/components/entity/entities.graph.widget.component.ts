@@ -82,6 +82,7 @@ export class EntitiesGraphWidgetComponent extends PageComponent implements OnIni
   private graphBackgroundColor: string;
   private graphAssetNodeColor: string;
   private graphDeviceNodeColor: string;
+  private graphCollapsedNodeColor: string;
   private graphNodeSize: number;
   private graphDistanceSize: number;
   private graphLinkWidth: number;
@@ -128,6 +129,7 @@ export class EntitiesGraphWidgetComponent extends PageComponent implements OnIni
     this.graphBackgroundColor = graphSettings?.backgroundColor || defaultGraphSettings.backgroundColor;
     this.graphAssetNodeColor = graphSettings?.assetNodeColor || defaultGraphSettings.assetNodeColor;
     this.graphDeviceNodeColor = graphSettings?.deviceNodeColor || defaultGraphSettings.deviceNodeColor;
+    this.graphCollapsedNodeColor = graphSettings?.collapsedNodeColor || defaultGraphSettings.collapsedNodeColor;
     this.graphNodeSize = graphSettings?.nodeSize || defaultGraphSettings.nodeSize;
     this.graphDistanceSize = graphSettings?.linkDistance || defaultGraphSettings.linkDistance;
     this.graphLinkWidth = graphSettings?.linkWidth || defaultGraphSettings.linkWidth;
@@ -487,7 +489,12 @@ export class EntitiesGraphWidgetComponent extends PageComponent implements OnIni
           if(node.level === 0 && this.rootNodeSpecialSettings) {
             return this.graphRootNodeColor;
           }
-          return node.entityType == EntityType.DEVICE ? '#ffffff' : '#ffffaa';
+
+          if(node.collapsed) {
+            return this.graphCollapsedNodeColor;
+          }
+
+          return node.entityType === EntityType.DEVICE ? this.graphDeviceNodeColor : this.graphAssetNodeColor;
         })
         .nodeThreeObject(node => {
           const sprite = new SpriteText(this.getNameOrLabel(node));

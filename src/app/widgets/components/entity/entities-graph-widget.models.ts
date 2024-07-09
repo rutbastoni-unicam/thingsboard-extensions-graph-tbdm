@@ -5,6 +5,7 @@ export interface EntitiesGraphWidgetSettings {
     backgroundColor?: string;
     assetNodeColor?: string;
     deviceNodeColor?: string;
+    collapsedNodeColor?: string;
     nodeSize?: number;
     linkDistance?: number;
     linkWidth?: number;
@@ -59,7 +60,8 @@ export const defaultGraphWidgetSettings: any = {
   graph: {
     backgroundColor: '#a7c1dE', //Default light blue like in Thingsboard theme - rgb(167, 193, 222)
     assetNodeColor: '#ffffaa', //Default yellow ForceGraph3D theme - rgb(255, 255, 170)
-    deviceNodeColor: '#ffffff', //Default light blue like in Thingsboard theme - rgb(255, 255, 255)
+    deviceNodeColor: '#ffffff', //Default white to serve as background for device icon - rgb(255, 255, 255)
+    collapsedNodeColor: '#008000', //Default green like in Thingsboard theme for success popups - rgb(255, 255, 255)
     nodeSize: 100,
     linkDistance: 100,
     linkWidth: 5,

@@ -96,6 +96,7 @@ export class EntitiesGraphWidgetComponent extends PageComponent implements OnIni
   private deviceIcon;
 
   private graphDomElement: HTMLElement =  null;
+  private sceneNavInfoInitted = false;
   private openedRelationsTooltip: GUI = null;
 
   private graph!: ForceGraph3DInstance;
@@ -404,6 +405,24 @@ export class EntitiesGraphWidgetComponent extends PageComponent implements OnIni
 
   private renderPrunedGraph() {
     this.graph.graphData(this.getPrunedTree());
+    this.initNavInfoInstructions();
+  }
+
+  private initNavInfoInstructions() {
+    if(!this.sceneNavInfoInitted) {
+      const sceneNavInfo = this.graphDomElement.querySelector('.scene-nav-info');
+      if(!sceneNavInfo) {
+        // Dom still not ready - wait for it
+        setTimeout(this.initNavInfoInstructions, 250);
+        return;
+      }
+
+      // Append customised instructions
+      if(!sceneNavInfo.innerHTML.toLowerCase().includes('<br>')) {
+        sceneNavInfo.innerHTML += '<br>Left click on asset nodes: expand/collapse them, Right click on nodes: manage devices';
+      }
+      this.sceneNavInfoInitted = true;
+    }
   }
 
   private getPrunedTree() {

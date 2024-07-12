@@ -419,7 +419,7 @@ export class EntitiesGraphWidgetComponent extends PageComponent implements OnIni
 
       // Append customised instructions
       if(!sceneNavInfo.innerHTML.toLowerCase().includes('<br>')) {
-        sceneNavInfo.innerHTML += '<br>Left click on asset nodes: expand/collapse them, Right click on nodes: manage devices';
+        sceneNavInfo.innerHTML += '<br>Left click on asset nodes: expand/collapse them, Right click on nodes: manage devices or select for dashboard action';
       }
       this.sceneNavInfoInitted = true;
     }
@@ -585,10 +585,14 @@ export class EntitiesGraphWidgetComponent extends PageComponent implements OnIni
           // If another tooltip was opened, close it
           this.closeRelationsTooltipIfOpened();
 
-          //Only allow this kind of operation if authenticated user is a tenant or a customer (kind of users allowed to
-          // have devices to query for)
+          const actionDescriptors = this.ctx.actionsApi.getActionDescriptors('nodeSelected');
+
+          //Popup makes sense only if there is at least one of these conditions: a configured action associated on node click
+          // (like navigating to another dashboard state with selected entity data), or if authenticated user is a tenant
+          // or a customer (kind of users allowed to have devices to query for and to manage relations among them)
           const authUser = getCurrentAuthUser(this.store);
-          if(!authUser || (authUser.authority !== Authority.TENANT_ADMIN && authUser.authority !== Authority.CUSTOMER_USER)) {
+          if(!actionDescriptors.length &&
+            (!authUser || (authUser.authority !== Authority.TENANT_ADMIN && authUser.authority !== Authority.CUSTOMER_USER))) {
             return;
           }
 
@@ -597,6 +601,29 @@ export class EntitiesGraphWidgetComponent extends PageComponent implements OnIni
             container: openedRelationsTooltipContainer,
             title: this.getNameOrLabel(node)
           });
+
+          // Configured actions descriptors - specific section
+          if(actionDescriptors.length) {
+            const actionsControl = {};
+
+            /**
+             * In 'parent' @link EntitiesHierarchyWidgetComponent only first configured action is taken into account;
+             * Since we are rendering a popup, maybe it is more conveniente to render all possible options to let user
+             * decide which action trigger
+             */
+            actionDescriptors.forEach(actionDescriptor => {
+              actionsControl[actionDescriptor.displayName] = () => {
+                this.ctx.actionsApi.handleWidgetAction(
+                  event,
+                  actionDescriptor,
+                  {entityType: node.entityType, id: node.id},
+                  node.name,
+                  { graphNode: node },
+                  node.label);
+              };
+              this.openedRelationsTooltip.add(actionsControl, actionDescriptor.displayName);
+            });
+          }
 
           //Specialize tooltip if it's an asset or device
           if(node.entityType === EntityType.ASSET) {

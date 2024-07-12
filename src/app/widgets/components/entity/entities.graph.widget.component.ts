@@ -110,7 +110,7 @@ export class EntitiesGraphWidgetComponent extends PageComponent implements OnIni
   }
 
   ngOnInit() {
-    console.log(this.ctx);
+    // console.log(this.ctx);
     this.ctx.$scope.entitiesGraphWidget = this;
     this.settings = this.ctx.settings;
     this.widgetConfig = this.ctx.widgetConfig;
@@ -962,10 +962,6 @@ export class EntitiesGraphWidgetComponent extends PageComponent implements OnIni
     } );
 
     this.renderPrunedGraph();
-      // .zoomToFit(1000, 5, (node: object) => {
-      //   // console.log('node include?');console.log(node);
-      //   return true;
-      // });
 
     if(this.fixPositionAfterDrag) {
       this.graph.onNodeDragEnd((node: GraphNode) => {
@@ -1065,39 +1061,3 @@ export class EntitiesGraphWidgetComponent extends PageComponent implements OnIni
     }
   }
 }
-
-/***
-  * DOCS FOR CUSTOM WIDGET IN THINGSBOARD LIBRARY (BEFORE SAVING IN THINGSBOARD DEDICATED REPOSITORY)
- *
- * HTML TAB
- *
-   <tb-entities-graph-widget [ctx]="ctx" [debugAssets]="['6b6d43b0-1465-11ef-a2b5-295f3faf72f6', '6b633190-1465-11ef-a2b5-295f3faf72f6']"></tb-entities-graph-widget>
-  *
-  * RESOURCES TAB
-  *
- * import compiled development or release version of this library
- *
- * JAVASCRIPT TAB
- *
- self.onInit = function() {
-   console.log('MAIN ONINIT should work');
-  }
-
-  self.onDataUpdated = function() {
-  }
-
-  self.onResize = function() {
-    console.error('resize');
-  }
-
-  self.typeParameters = function() {
-
-    return {
-      dataKeysOptional: true
-    };
-  }
-
-  self.onDestroy = function() {
-  }
-
-*/

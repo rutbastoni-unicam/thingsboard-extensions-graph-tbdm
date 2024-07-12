@@ -1,4 +1,4 @@
-import { Datasource } from '@shared/public-api';
+import { Datasource, EntityType, AliasEntityType } from '@shared/public-api';
 
 export interface EntitiesGraphWidgetSettings {
   graph?: {
@@ -18,13 +18,14 @@ export interface EntitiesGraphWidgetSettings {
     fixPositionAfterDrag?: boolean;
     deviceIcon?: string;
   };
-  nodeRelationQueryFunction: string;
-  nodeHasChildrenFunction: string;
-  nodeOpenedFunction: string;
-  nodeDisabledFunction: string;
-  nodeIconFunction: string;
-  nodeTextFunction: string;
-  nodesSortFunction: string;
+  // Inspired by system EntitiesHierarchyWidgetComponent, but not implemented
+  // nodeRelationQueryFunction: string;
+  // nodeHasChildrenFunction: string;
+  // nodeOpenedFunction: string;
+  // nodeDisabledFunction: string;
+  // nodeIconFunction: string;
+  // nodeTextFunction: string;
+  // nodesSortFunction: string;
 }
 
 export interface GraphNodeDatasource extends Datasource {
@@ -35,7 +36,7 @@ export interface GraphNode {
   id: string;
   label: string;
   name: string;
-  entityType: string;
+  entityType: EntityType | AliasEntityType;
   childrenNodesLoaded: boolean;
   level: number;
   datasource: GraphNodeDatasource;

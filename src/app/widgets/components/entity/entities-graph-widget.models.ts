@@ -1,3 +1,7 @@
+///
+/// Copyright © 2024 Rut Bastoni rut.bastoni@gmail.com
+///
+
 import { Datasource, EntityType, AliasEntityType } from '@shared/public-api';
 
 export interface EntitiesGraphWidgetSettings {

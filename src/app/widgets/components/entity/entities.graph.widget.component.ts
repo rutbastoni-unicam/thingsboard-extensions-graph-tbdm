@@ -1,3 +1,7 @@
+///
+/// Copyright © 2024 Rut Bastoni rut.bastoni@gmail.com
+///
+
 import {AfterViewInit, Component, ElementRef, Input, OnInit, Renderer2, ViewEncapsulation} from '@angular/core';
 
 import {

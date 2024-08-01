@@ -21,6 +21,7 @@ import {
   EntityRelationsQuery,
   EntitySearchDirection,
   EntityType,
+  LatestTelemetry,
   MANAGES_TYPE,
   PageComponent,
   PageData,
@@ -62,6 +63,8 @@ export class EntitiesGraphWidgetComponent extends PageComponent implements OnIni
 
   @Input()
   debugAssets: Array<string>;
+
+  latestTelemetryTypes = LatestTelemetry;
 
   public toastTargetId = 'entities-graph-' + this.utils.guid();
 
@@ -731,6 +734,55 @@ export class EntitiesGraphWidgetComponent extends PageComponent implements OnIni
             });
 
           } else {
+            // Show last telemetry
+            const showLastTelKey = 'Show last telemetry';
+            const deviceControlData  = {
+               [showLastTelKey]: () => {
+                 // Leverage the same Thingsboard widget utilized in official settings panels, showing it in a dialog
+                 const showTelemetryDialogTemplate =
+                   '<div aria-label="Image">' +
+                   '<form #theForm="ngForm">' +
+                   '<mat-toolbar fxLayout="row" color="primary">' +
+                   '<h2>{{title}}</h2>' +
+                   '<span fxFlex></span>' +
+                   '<button mat-icon-button (click)="close()"><mat-icon>close</mat-icon></button>' +
+                   '</mat-toolbar>' +
+                   '<div mat-dialog-content>' +
+                   '<div class="mat-content mat-padding" style="height: 500px; min-width: 1085px;">' +
+                   '<div fxLayout="column" fxFlex>' +
+                   '<div style="padding-top: 20px;">' +
+                   '<tb-attribute-table [defaultAttributeScope]="telemetryType"\n' +
+                   '                      disableAttributeScopeSelection\n' +
+                   '                      [active]="true"\n' +
+                   '                      [entityId]="deviceId"\n' +
+                   '                      [entityName]="deviceName">\n' +
+                   '           </tb-attribute-table>' +
+                   '</div>' +
+                   '</div>' +
+                   '</div>' +
+                   '</div>' +
+                   '<div mat-dialog-actions fxLayout="row">' +
+                   '<span fxFlex></span>' +
+                   '<button mat-button (click)="close()" style="margin-right:20px;">Close</button>' +
+                   '</div>' +
+                   '</form>' +
+                   '</div>';
+
+                 this.ctx.detectChanges();
+                 this.ctx.customDialog.customDialog(showTelemetryDialogTemplate, (instance) => {
+                   instance.title = 'Last telemetry for ' + this.getNameOrLabel(node) + ' device';
+                   instance.close = () => {
+                     instance.dialogRef.close(null);
+                   };
+                   instance.telemetryType = this.latestTelemetryTypes.LATEST_TELEMETRY;
+                   instance.deviceId = { id: node.id, entityType: EntityType.DEVICE };
+                   instance.deviceName = node.name;
+
+                 }).subscribe();
+               }
+            };
+            this.openedRelationsTooltip.add(deviceControlData, showLastTelKey);
+
             // Find if this device is contained in an asset (could only by managed by another device)
             // const assetContainer = this.
             const assetContainer = this.graphData.nodes.find(graphNode =>
@@ -741,7 +793,6 @@ export class EntitiesGraphWidgetComponent extends PageComponent implements OnIni
                 )
             );
 
-            const deviceControlData  = {};
             if(assetContainer) {
               const removeKey = 'Remove from ' + this.getNameOrLabel(assetContainer);
               deviceControlData[removeKey] = () => { this.removeDeviceFromAsset(assetContainer, node.id) };
